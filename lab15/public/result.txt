@@ -1,0 +1,170 @@
+﻿=== БЛОК КОДА #1 ===
+<?php 
+    /* Подключение к серверу MySQL */ 
+      $link = mysqli_connect( 
+                    'localhost',  /* Хост, к которому мы подключаемся */ 
+                      'user',       /* Имя пользователя */ 
+                        'password',   /* Используемый пароль */ 
+                          'world');     /* База данных для запросов по 
+                умолчанию */ 
+                if 
+                  (!$link) { 
+                       printf("Невозможно подключиться к базе данных. 
+                      Код ошибки: %s\n", mysqli_connect_error()); 
+                           exit; 
+                        } 
+                        /* Посылаем запрос 
+                          серверу */ 
+                          if 
+                            ($result = mysqli_query($link, 'SELECT Name, Population FROM City 
+                              ORDER BY Population DESC LIMIT 5')) { 
+                                    print("Очень крупные города:\n"); 
+                                      /* Выборка результатов запроса */ 
+                                        while( $row = mysqli_fetch_assoc($result) ){ 
+                                              printf("%s (%s)\n", $row['Name'], $row['Population']); 
+                                            } 
+                                            /* Освобождаем используемую память */ 
+                                              mysqli_free_result($result); 
+                                            } 
+                                            /* Закрываем соединение */ 
+                                              mysqli_close($link); 
+                                              ?> 
+
+=== БЛОК КОДА #2 ===
+Очень крупные города:
+    Mumbai (Bombay) (10500000)
+      Seoul (9981619)
+        Sao Paulo (9968485)
+          Shanghai (9696300)
+          Jakarta (9604900) 
+
+=== БЛОК КОДА #3 ===
+<?php 
+    /* Подключение к серверу MySQL */ 
+      $mysqli = new mysqli('localhost', 'user', 'password', 'world'); 
+        if (mysqli_connect_errno()) { 
+             printf("Подключение к серверу MySQL 
+            невозможно. Код ошибки: %s\n", mysqli_connect_error()); 
+                 exit; 
+              } 
+              /* Посылаем запрос 
+                серверу */ 
+                if 
+                  ($result = $mysqli->query('SELECT Name, Population FROM City 
+                    ORDER BY Population DESC LIMIT 5')) { 
+                          print("Очень крупные города:\n"); 
+                            /* Выбираем результаты запроса: */ 
+                              while( $row = $result->fetch_assoc() ){ 
+                                    printf("%s (%s)\n", $row['Name'], $row['Population']); 
+                                  } 
+                                  /* Освобождаем память */ 
+                                    $result->close(); 
+                                  } 
+                                  /* Закрываем соединение */ 
+                                    $mysqli->close(); 
+                                    ?> 
+
+=== БЛОК КОДА #4 ===
+INSERT INTO City (ID, Name) VALUES (NULL, 'Calgary'); 
+
+=== БЛОК КОДА #5 ===
+INSERT INTO City (ID, Name) VALUES (?, ?); 
+
+=== БЛОК КОДА #6 ===
+SELECT Name FROM City WHERE Name = 'Calgary'; 
+
+=== БЛОК КОДА #7 ===
+SELECT Name FROM City WHERE name = ?; 
+
+=== БЛОК КОДА #8 ===
+<?php 
+    $mysqli = new mysqli('localhost', 'user', 'password', 'world'); 
+      /* Проверка соединения */ 
+        if (mysqli_connect_errno()) { 
+              printf("Подключение невозможно: 
+            %s\n", mysqli_connect_error()); 
+                  exit(); 
+              } 
+              $stmt = $mysqli->prepare("INSERT INTO CountryLanguage VALUES (?, 
+                ?, ?, ?)"); 
+                  $stmt->bind_param('sssd', $code, $language, $official, $percent); 
+                    $code = 'DEU'; 
+                      $language = 'Bavarian'; 
+                        $official = "F"; 
+                          $percent = 11.2; 
+                            /* выполнение подготовленного 
+                              выражения  */ 
+                              $stmt->execute(); 
+                                printf("%d Row inserted.\n", $stmt->affected_rows); 
+                                  /* Закрытие соединения и выражения*/ 
+                                    $stmt->close(); 
+                                      /* Очистить таблицу CountryLanguage */ 
+                                        $mysqli->query("DELETE FROM CountryLanguage WHERE 
+                                          Language='Bavarian'"); 
+                                            printf("%d Row deleted.\n", $mysqli->affected_rows); 
+                                              /* Закрыть подключение */ 
+                                                $mysqli->close(); 
+                                                ?> 
+
+=== БЛОК КОДА #9 ===
+$stmt->bind_param('s', $foo); 
+    $stmt->bind_param('si', $foo, $bar); 
+    $stmt->bind_param('sid', $foo, $bar, $baz); 
+
+=== БЛОК КОДА #10 ===
+<?php 
+    $mysqli = new mysqli("localhost", "user", "password", "world"); 
+      if (mysqli_connect_errno()) { 
+            printf("Подключение невозможно: 
+          %s\n", mysqli_connect_error()); 
+                exit(); 
+            } 
+            /* Подготовленное выражение */ 
+              if ($stmt = $mysqli->prepare("SELECT Code, Name FROM Country ORDER 
+                BY Name LIMIT 5")) { 
+                      $stmt->execute(); 
+                        /* Привязывание переменных к заготовке 
+                      */ 
+                          $stmt->bind_result($col1, $col2); 
+                            /* Выборка значений */ 
+                              while ($stmt->fetch()) { 
+                                    printf("%s %s\n", $col1, $col2); 
+                                  } 
+                                  /* Закрытие оператора 
+                                $stmt->close(); 
+                                } 
+                                /* Закрытие соединения */ 
+                                $mysqli->close(); 
+                                ?> 
+
+=== БЛОК КОДА #11 ===
+<?php 
+    $mysqli = new mysqli("localhost", "user", "password", "world"); 
+      if (mysqli_connect_errno()) { 
+            printf("Подключение невозможно: 
+          %s\n", mysqli_connect_error()); 
+                exit(); 
+            } 
+            /* Подготовленное выражение */ 
+              if ($stmt = $mysqli->prepare("SELECT Code, Name FROM Country WHERE 
+                Code LIKE ? LIMIT 5")) { 
+                      $stmt->bind_param("s", $code); 
+                        $code = "C%"; 
+                          $stmt->execute(); 
+                            /* Объявление переменных для 
+                          заготовленного выражения*/ 
+                              $stmt->bind_result($col1, $col2); 
+                                /* Выборка значений */ 
+                                  while ($stmt->fetch()) { 
+                                        printf("%s %s\n", $col1, $col2); 
+                                      } 
+                                      /* Закрытие выражения */ 
+                                        $stmt->close(); 
+                                      } 
+                                      /* Закрытие подключение */ 
+                                        $mysqli->close(); 
+                                        ?> 
+
+=== ИТОГОВАЯ ИНФОРМАЦИЯ ===
+Обработано блоков кода: 11
+Общее количество слов '?php': 5

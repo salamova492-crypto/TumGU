@@ -8,7 +8,7 @@ require __DIR__ . '/src/models.php';
 require __DIR__ . '/src/controllers.php';
 require_once __DIR__ . '/src/views.php';
 
-$controller = new RentController($databaseConnection);
+$controller = new HealthClinicController($databaseConnection);
 
 // Роутинг
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
@@ -18,65 +18,39 @@ $path = trim($path, '/');
 // Обработка маршрутов
 if ($path === '' || $path === 'index.php') {
     $controller->index();
-} elseif ($path === 'objects') {
-    $controller->showObjects();
-} elseif ($path === 'objects/add') {
+} elseif ($path === 'register') {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $controller->addRentalObject();
+        $controller->register();
     } else {
-        $controller->showAddObjectForm();
+        $controller->showRegisterForm();
     }
-} elseif (preg_match('#^objects/delete/(\d+)$#', $path, $matches)) {
-    $controller->deleteRentalObject($matches[1]);
-} elseif ($path === 'renters') {
-    $controller->showRenters();
-} elseif ($path === 'renters/add') {
+} elseif ($path === 'login') {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $controller->addRenter();
+        $controller->login();
     } else {
-        $controller->showAddRenterForm();
+        $controller->showLoginForm();
     }
-} elseif (preg_match('#^renters/delete/(\d+)$#', $path, $matches)) {
-    $controller->deleteRenter($matches[1]);
-} elseif ($path === 'rentals') {
-    $controller->showRentals();
-} elseif ($path === 'rentals/add') {
+} elseif ($path === 'logout') {
+    $controller->logout();
+} elseif ($path === 'profile') {
+    $controller->profile();
+} elseif ($path === 'specialties') {
+    $controller->showSpecialties();
+} elseif ($path === 'booking') {
+    $controller->showBookingForm();
+} elseif ($path === 'book') {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $controller->addRentalDetail();
-    } else {
-        $controller->showAddRentalForm();
+        $controller->bookAppointment();
     }
-} elseif (preg_match('#^rentals/delete/(\d+)$#', $path, $matches)) {
-    $controller->deleteRentalDetail($matches[1]);
-} elseif ($path === 'report/1') {
-    $controller->report1();
-} elseif ($path === 'report/2') {
-    $controller->report2();
-} elseif ($path === 'report/3') {
-    $controller->report3();
-} elseif ($path === 'report/4') {
-    $controller->report4();
-} elseif ($path === 'report/5') {
-    $controller->report5();
-} elseif ($path === 'report/6') {
-    $controller->report6();
-} elseif ($path === 'report/7') {
-    $controller->report7();
-} elseif ($path === 'report/8') {
+} elseif ($path === 'cancel-appointment') {
+    $controller->cancelAppointment();
+} elseif ($path === 'admin') {
+    $controller->adminPanel();
+} elseif ($path === 'admin/add-doctor') {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $data = $_POST;
-        $types = isset($data['types']) ? $data['types'] : [];
-        $controller->report8($data['year'], $data['quarter'], $types);
+        $controller->addDoctor();
     } else {
-        $controller->report8Form();
-    }
-} elseif ($path === 'report/9') {
-    $controller->report9();
-} elseif ($path === 'report/10') {
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $controller->report10($_POST['object_type']);
-    } else {
-        $controller->report10Form();
+        $controller->showAddDoctorForm();
     }
 } else {
     http_response_code(404);

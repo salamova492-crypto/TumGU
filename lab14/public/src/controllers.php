@@ -5,21 +5,21 @@ ini_set('display_errors', '1');
 require_once __DIR__ . '/models.php';
 
 /**
- * Контроллер для работы с базой данных аренды
+ * Контроллер для работы с клиникой "Здоровый образ жизни"
  */
-class RentController
+class HealthClinicController
 {
     /**
      * Репозиторий для работы с данными
      */
-    private RentRepository $repository;
+    private HealthClinicRepository $repository;
     
     /**
      * Конструктор контроллера
      */
     public function __construct(PDO $db)
     {
-        $this->repository = new RentRepository($db);
+        $this->repository = new HealthClinicRepository($db);
     }
     
     /**
@@ -32,59 +32,96 @@ class RentController
     }
     
     /**
-     * Отображение списка объектов аренды
+     * Отображение формы регистрации
      */
-    public function showObjects(): void
+    public function showRegisterForm(): void
     {
-        $objects = $this->repository->getAllRentalObjects();
-        $html = renderLayout('objects', ['objects' => $objects]);
+        $html = renderLayout('register');
         echo $html;
     }
     
     /**
-     * Отображение формы добавления объекта аренды
+     * Обработка регистрации пользователя
      */
-    public function showAddObjectForm(): void
-    {
-        $html = renderLayout('add_object');
-        echo $html;
-    }
-    
-    /**
-     * Добавление нового объекта аренды
-     */
-    public function addRentalObject(): void
+    public function register(): void
     {
         $errors = [];
         $formData = $_POST ?? [];
         
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $type = trim($_POST['type'] ?? '');
-            $price = trim($_POST['price_per_month'] ?? '');
+            $fullName = trim($_POST['full_name'] ?? '');
+            $email = trim($_POST['email'] ?? '');
+            $password = $_POST['password'] ?? '';
+            $confirmPassword = $_POST['confirm_password'] ?? '';
             
             // Валидация данных
-            if (empty($type)) $errors[] = 'Тип объекта обязателен для заполнения';
-            if (empty($price) || !is_numeric($price) || (float)$price <= 0) {
-                $errors[] = 'Цена за месяц должна быть положительным числом';
+            if (empty($fullName)) {
+                $errors[] = 'Полное имя обязательно для заполнения';
+            } else {
+                // Проверка, что имя содержит только кириллические буквы и пробелы
+                if (!preg_match('/^[А-Яа-яЁё\s]+$/u', $fullName)) {
+                    $errors[] = 'Полное имя должно содержать только кириллические буквы и пробелы';
+                }
             }
-            // Добавляем валидацию на заглавную букву - исправленная версия
-            if (!empty($type) && !preg_match('/^[А-ЯA-ZЁ]/u', $type)) {
-                $errors[] = 'Тип объекта должен начинаться с заглавной буквы';
+            
+            if (empty($email)) {
+                $errors[] = 'Электронная почта обязательна для заполнения';
+            } else {
+                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $errors[] = 'Некорректный формат электронной почты';
+                } else {
+                    // Проверка уникальности email в базе данных
+                    $existingUser = $this->repository->getUserByEmail($email);
+                    if ($existingUser) {
+                        $errors[] = 'Пользователь с такой электронной почтой уже существует';
+                    }
+                }
+            }
+            
+            if (empty($password)) {
+                $errors[] = 'Пароль обязателен для заполнения';
+            } else {
+                if (strlen($password) < 6) {
+                    $errors[] = 'Пароль должен содержать не менее 6 символов';
+                }
+                // Проверка, что пароль использует английскую раскладку
+                if (!preg_match('/^[a-zA-Z0-9!@#$%^&*()_+\-=\[\]{};\':"\\|,.<>\/?]*$/', $password)) {
+                    $errors[] = 'Пароль должен использовать английскую клавиатурную раскладку';
+                }
+            }
+            
+            if (empty($confirmPassword)) {
+                $errors[] = 'Подтверждение пароля обязательно';
+            } else {
+                if ($password !== $confirmPassword) {
+                    $errors[] = 'Пароли не совпадают';
+                }
             }
             
             if (empty($errors)) {
+                // Хешируем пароль с помощью md5 (как указано в требованиях)
+                $passwordHash = md5($password);
+                
                 $data = [
-                    'type' => $type,
-                    'price_per_month' => (float)$price
+                    'full_name' => $fullName,
+                    'email' => $email,
+                    'password_hash' => $passwordHash
                 ];
                 
-                $id = $this->repository->createRentalObject($data);
-                header('Location: /objects?success=1');
+                $userId = $this->repository->createUser($data);
+                
+                // Устанавливаем сессию для зарегистрированного пользователя
+                session_start();
+                $_SESSION['user_id'] = $userId;
+                $_SESSION['user_email'] = $email;
+                $_SESSION['user_full_name'] = $fullName;
+                
+                header('Location: /profile');
                 exit;
             }
         }
         
-        $html = renderLayout('add_object', [
+        $html = renderLayout('register', [
             'errors' => $errors,
             'formData' => $formData
         ]);
@@ -92,214 +129,287 @@ class RentController
     }
     
     /**
-     * Удаление объекта аренды
+     * Отображение формы авторизации
      */
-    public function deleteRentalObject(string $id): void
+    public function showLoginForm(): void
     {
-        if (!is_numeric($id) || (int)$id <= 0) {
-            header('Location: /objects?error=invalid_id');
-            exit;
-        }
-        
-        $objectId = (int)$id;
-        
-        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            if ($this->repository->deleteRentalObject($objectId)) {
-                header('Location: /objects?deleted=1');
-            } else {
-                header('Location: /objects?error=not_found');
-            }
-            exit;
-        }
-        
-        $object = $this->repository->getRentalObjectById($objectId);
-        
-        if (!$object) {
-            header('Location: /objects?error=not_found');
-            exit;
-        }
-        
-        $html = renderLayout('delete_object', ['object' => $object]);
+        $html = renderLayout('login');
         echo $html;
     }
     
     /**
-     * Отображение списка арендаторов
+     * Обработка авторизации пользователя
      */
-    public function showRenters(): void
-    {
-        $renters = $this->repository->getAllRenters();
-        $html = renderLayout('renters', ['renters' => $renters]);
-        echo $html;
-    }
-    
-    /**
-     * Отображение формы добавления арендатора
-     */
-    public function showAddRenterForm(): void
-    {
-        $html = renderLayout('add_renter');
-        echo $html;
-    }
-    
-    /**
-     * Добавление нового арендатора
-     */
-    public function addRenter(): void
+    public function login(): void
     {
         $errors = [];
-        $formData = $_POST ?? [];
         
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $lastName = trim($_POST['last_name'] ?? '');
+            $login = trim($_POST['login'] ?? '');
+            $password = $_POST['password'] ?? '';
             
-            // Валидация данных
-            if (empty($lastName)) $errors[] = 'Фамилия арендатора обязательна для заполнения';
-            if (strlen($lastName) < 2) $errors[] = 'Фамилия должна содержать минимум 2 символа';
-            if (strlen($lastName) > 50) $errors[] = 'Фамилия должна содержать максимум 50 символов';
-            // Добавляем валидацию на заглавную букву - исправленная версия
-            if (!empty($lastName) && !preg_match('/^[А-ЯA-ZЁ]/u', $lastName)) {
-                $errors[] = 'Фамилия должна начинаться с заглавной буквы';
+            if (empty($login)) {
+                $errors[] = 'Логин обязателен для заполнения';
+            }
+            
+            if (empty($password)) {
+                $errors[] = 'Пароль обязателен для заполнения';
             }
             
             if (empty($errors)) {
-                $data = [
-                    'last_name' => $lastName
-                ];
-                
-                $id = $this->repository->createRenter($data);
-                header('Location: /renters?success=1');
-                exit;
+                // Проверяем, не является ли пользователь администратором
+                if ($this->repository->isAdmin($login, $password)) {
+                    session_start();
+                    $_SESSION['admin_logged_in'] = true;
+                    
+                    header('Location: /admin');
+                    exit;
+                } else {
+                    // Ищем пользователя по email
+                    $user = $this->repository->getUserByEmail($login);
+                    
+                    if ($user && $user['password_hash'] === md5($password)) {
+                        // Успешная авторизация
+                        session_start();
+                        $_SESSION['user_id'] = $user['id'];
+                        $_SESSION['user_email'] = $user['email'];
+                        $_SESSION['user_full_name'] = $user['full_name'];
+                        
+                        header('Location: /profile');
+                        exit;
+                    } else {
+                        $errors[] = 'Неверный логин или пароль';
+                    }
+                }
             }
         }
         
-        $html = renderLayout('add_renter', [
-            'errors' => $errors,
-            'formData' => $formData
+        $html = renderLayout('login', ['errors' => $errors]);
+        echo $html;
+    }
+    
+    /**
+     * Выход из системы
+     */
+    public function logout(): void
+    {
+        session_start();
+        session_destroy();
+        header('Location: /');
+        exit;
+    }
+    
+    /**
+     * Отображение профиля пользователя
+     */
+    public function profile(): void
+    {
+        session_start();
+        if (!isset($_SESSION['user_id'])) {
+            header('Location: /login');
+            exit;
+        }
+        
+        $userId = $_SESSION['user_id'];
+        $appointments = $this->repository->getAppointmentsByUserId($userId);
+        
+        $html = renderLayout('profile', [
+            'appointments' => $appointments
         ]);
         echo $html;
     }
     
     /**
-     * Удаление арендатора
+     * Отображение списка специальностей врачей
      */
-    public function deleteRenter(string $id): void
+    public function showSpecialties(): void
     {
-        if (!is_numeric($id) || (int)$id <= 0) {
-            header('Location: /renters?error=invalid_id');
-            exit;
-        }
+        $specialties = $this->repository->getAllSpecialties();
         
-        $renterId = (int)$id;
-        
-        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            if ($this->repository->deleteRenter($renterId)) {
-                header('Location: /renters?deleted=1');
-            } else {
-                header('Location: /renters?error=not_found');
-            }
-            exit;
-        }
-        
-        $renter = $this->repository->getRenterById($renterId);
-        
-        if (!$renter) {
-            header('Location: /renters?error=not_found');
-            exit;
-        }
-        
-        $html = renderLayout('delete_renter', ['renter' => $renter]);
-        echo $html;
-    }
-    
-    /**
-     * Отображение списка сведений об аренде
-     */
-    public function showRentals(): void
-    {
-        $rentals = $this->repository->getAllRentalDetails();
-        $html = renderLayout('rentals', ['rentals' => $rentals]);
-        echo $html;
-    }
-    
-    /**
-     * Отображение формы добавления сведений об аренде
-     */
-    public function showAddRentalForm(): void
-    {
-        $objects = $this->repository->getAllRentalObjects();
-        $renters = $this->repository->getAllRenters();
-        $html = renderLayout('add_rental', [
-            'objects' => $objects,
-            'renters' => $renters
+        $html = renderLayout('specialties', [
+            'specialties' => $specialties
         ]);
         echo $html;
     }
     
     /**
-     * Добавление новых сведений об аренде
+     * Отображение формы бронирования
      */
-    public function addRentalDetail(): void
+    public function showBookingForm(): void
     {
-        $objects = $this->repository->getAllRentalObjects();
-        $renters = $this->repository->getAllRenters();
+        session_start();
+        if (!isset($_SESSION['user_id'])) {
+            header('Location: /login');
+            exit;
+        }
+        
+        $specialties = $this->repository->getAllSpecialties();
+        
+        $selectedSpecialty = $_GET['specialty'] ?? '';
+        $selectedDate = $_GET['date'] ?? '';
+        
+        $availableDoctors = [];
+        if ($selectedSpecialty && $selectedDate) {
+            $availableDoctors = $this->repository->getAvailableDoctorsForDate($selectedDate);
+            // Фильтруем врачей по выбранной специальности
+            $availableDoctors = array_filter($availableDoctors, function($doctor) use ($selectedSpecialty) {
+                return $doctor['specialty'] === $selectedSpecialty;
+            });
+        }
+        
+        $html = renderLayout('booking', [
+            'specialties' => $specialties,
+            'selectedSpecialty' => $selectedSpecialty,
+            'selectedDate' => $selectedDate,
+            'availableDoctors' => $availableDoctors
+        ]);
+        echo $html;
+    }
+    
+    /**
+     * Обработка бронирования
+     */
+    public function bookAppointment(): void
+    {
+        session_start();
+        if (!isset($_SESSION['user_id'])) {
+            header('Location: /login');
+            exit;
+        }
+        
         $errors = [];
-        $formData = $_POST ?? [];
         
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $objectId = $_POST['object_id'] ?? '';
-            $renterId = $_POST['renter_id'] ?? '';
-            $startDate = trim($_POST['start_date'] ?? '');
-            $durationMonths = trim($_POST['duration_months'] ?? ''); // Исправлено: $durationMonths вместо $duration_months
+            $doctorId = (int)($_POST['doctor_id'] ?? 0);
+            $date = trim($_POST['date'] ?? '');
             
-            // Валидация данных
-            if (empty($objectId) || !is_numeric($objectId) || (int)$objectId <= 0) {
-                $errors[] = 'Выберите объект аренды';
-            }
-            if (empty($renterId) || !is_numeric($renterId) || (int)$renterId <= 0) {
-                $errors[] = 'Выберите арендатора';
-            }
-            if (empty($startDate)) {
-                $errors[] = 'Дата начала аренды обязательна';
-            } elseif (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)) {
-                $errors[] = 'Неверный формат даты (должен быть ГГГГ-ММ-ДД)';
-            } elseif (strtotime($startDate) === false) {
-                $errors[] = 'Неверная дата';
+            if (empty($doctorId) || $doctorId <= 0) {
+                $errors[] = 'Выберите врача';
             }
             
-            if (empty($durationMonths) || !is_numeric($durationMonths)) {
-                $errors[] = 'Продолжительность аренды должна быть числом';
-            } elseif ((int)$durationMonths <= 0) {
-                $errors[] = 'Продолжительность аренды должна быть положительным числом';
-            } elseif ((int)$durationMonths > 120) { // Добавляем ограничение для предотвращения нарушения check constraint
-                $errors[] = 'Продолжительность аренды не может превышать 120 месяцев (10 лет)';
+            if (empty($date)) {
+                $errors[] = 'Выберите дату';
+            } else {
+                // Проверяем формат даты
+                $dateObj = DateTime::createFromFormat('Y-m-d', $date);
+                if (!$dateObj || $dateObj->format('Y-m-d') !== $date) {
+                    $errors[] = 'Неверный формат даты';
+                } else {
+                    // Проверяем, что дата не в прошлом
+                    $today = new DateTime();
+                    $today->setTime(0, 0, 0); // Установим время на начало дня для сравнения
+                    if ($dateObj < $today) {
+                        $errors[] = 'Нельзя записаться на прошедшую дату';
+                    }
+                }
             }
             
-            // Дополнительная проверка на корректность даты
-            if (!empty($startDate) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)) {
-                $dateParts = explode('-', $startDate);
-                if (!checkdate((int)$dateParts[1], (int)$dateParts[2], (int)$dateParts[0])) {
-                    $errors[] = 'Неверная дата';
+            if (empty($errors)) {
+                // Проверяем, есть ли свободные места у врача на эту дату
+                $availableSlots = $this->repository->getAvailableSlotsForDoctorOnDate($doctorId, $date);
+                if ($availableSlots <= 0) {
+                    $errors[] = 'У выбранного врача нет свободных мест на выбранную дату';
                 }
             }
             
             if (empty($errors)) {
                 $data = [
-                    'object_id' => (int)$objectId,
-                    'renter_id' => (int)$renterId,
-                    'start_date' => $startDate,
-                    'duration_months' => (int)$durationMonths // Исправлено: $durationMonths вместо $duration_months
+                    'user_id' => $_SESSION['user_id'],
+                    'doctor_id' => $doctorId,
+                    'appointment_date' => $date
                 ];
                 
-                $id = $this->repository->createRentalDetail($data);
-                header('Location: /rentals?success=1');
+                $appointmentId = $this->repository->createAppointment($data);
+                
+                header('Location: /profile?booked=1');
                 exit;
             }
         }
         
-        $html = renderLayout('add_rental', [
-            'objects' => $objects,
-            'renters' => $renters,
+        // Если были ошибки, возвращаемся к форме бронирования
+        $specialties = $this->repository->getAllSpecialties();
+        $selectedSpecialty = $_POST['specialty'] ?? '';
+        $selectedDate = $_POST['date'] ?? '';
+        
+        $availableDoctors = [];
+        if ($selectedSpecialty && $selectedDate) {
+            $availableDoctors = $this->repository->getAvailableDoctorsForDate($selectedDate);
+            // Фильтруем врачей по выбранной специальности
+            $availableDoctors = array_filter($availableDoctors, function($doctor) use ($selectedSpecialty) {
+                return $doctor['specialty'] === $selectedSpecialty;
+            });
+        }
+        
+        $html = renderLayout('booking', [
+            'specialties' => $specialties,
+            'selectedSpecialty' => $selectedSpecialty,
+            'selectedDate' => $selectedDate,
+            'availableDoctors' => $availableDoctors,
+            'errors' => $errors
+        ]);
+        echo $html;
+    }
+    
+    /**
+     * Отображение формы добавления врача (для администратора)
+     */
+    public function showAddDoctorForm(): void
+    {
+        session_start();
+        if (!isset($_SESSION['admin_logged_in']) || !$_SESSION['admin_logged_in']) {
+            header('Location: /login');
+            exit;
+        }
+        
+        $html = renderLayout('add_doctor');
+        echo $html;
+    }
+    
+    /**
+     * Добавление врача
+     */
+    public function addDoctor(): void
+    {
+        session_start();
+        if (!isset($_SESSION['admin_logged_in']) || !$_SESSION['admin_logged_in']) {
+            header('Location: /login');
+            exit;
+        }
+        
+        $errors = [];
+        $formData = $_POST ?? [];
+        
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $fullName = trim($_POST['full_name'] ?? '');
+            $specialty = trim($_POST['specialty'] ?? '');
+            
+            if (empty($fullName)) {
+                $errors[] = 'Полное имя обязательно для заполнения';
+            } else {
+                // Проверка, что имя содержит только кириллические буквы и пробелы
+                if (!preg_match('/^[А-Яа-яЁё\s]+$/u', $fullName)) {
+                    $errors[] = 'Полное имя должно содержать только кириллические буквы и пробелы';
+                }
+            }
+            
+            if (empty($specialty)) {
+                $errors[] = 'Специальность обязательна для заполнения';
+            }
+            
+            if (empty($errors)) {
+                $data = [
+                    'full_name' => $fullName,
+                    'specialty' => $specialty
+                ];
+                
+                $doctorId = $this->repository->createDoctor($data);
+                
+                header('Location: /admin?added=1');
+                exit;
+            }
+        }
+        
+        $html = renderLayout('add_doctor', [
             'errors' => $errors,
             'formData' => $formData
         ]);
@@ -307,184 +417,66 @@ class RentController
     }
     
     /**
-     * Удаление записи об аренде
+     * Отображение админ панели
      */
-    public function deleteRentalDetail(string $id): void
+    public function adminPanel(): void
     {
-        if (!is_numeric($id) || (int)$id <= 0) {
-            header('Location: /rentals?error=invalid_id');
+        session_start();
+        if (!isset($_SESSION['admin_logged_in']) || !$_SESSION['admin_logged_in']) {
+            header('Location: /login');
             exit;
         }
         
-        $rentalId = (int)$id;
+        $doctors = $this->repository->getAllDoctors();
+        $appointments = $this->repository->getAllAppointments();
         
-        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            if ($this->repository->deleteRentalDetail($rentalId)) {
-                header('Location: /rentals?deleted=1');
-            } else {
-                header('Location: /rentals?error=not_found');
+        $html = renderLayout('admin', [
+            'doctors' => $doctors,
+            'appointments' => $appointments
+        ]);
+        echo $html;
+    }
+    
+    /**
+     * Отмена записи
+     */
+    public function cancelAppointment(): void
+    {
+        session_start();
+        if (!isset($_SESSION['user_id'])) {
+            header('Location: /login');
+            exit;
+        }
+        
+        $appointmentId = (int)($_GET['id'] ?? 0);
+        $userId = $_SESSION['user_id'];
+        
+        if ($appointmentId > 0) {
+            // Получаем информацию о записи для проверки даты
+            $stmt = $this->repository->db->prepare("
+                SELECT appointment_date FROM appointments 
+                WHERE id = :id AND user_id = :user_id
+            ");
+            $stmt->bindValue(':id', $appointmentId, PDO::PARAM_INT);
+            $stmt->bindValue(':user_id', $userId, PDO::PARAM_INT);
+            $stmt->execute();
+            $appointment = $stmt->fetch();
+            
+            if ($appointment) {
+                // Проверяем, можно ли отменить запись (не позже, чем за день до)
+                $appointmentDate = new DateTime($appointment['appointment_date']);
+                $today = new DateTime();
+                $today->setTime(0, 0, 0);
+                
+                // Если запись на сегодня или на будущее, и еще не прошло 24 часа до приема
+                if ($appointmentDate >= $today) {
+                    $this->repository->deleteAppointment($appointmentId, $userId);
+                }
             }
-            exit;
         }
         
-        $rental = $this->repository->getRentalDetailById($rentalId);
-        
-        if (!$rental) {
-            header('Location: /rentals?error=not_found');
-            exit;
-        }
-        
-        $html = renderLayout('delete_rental', ['rental' => $rental]);
-        echo $html;
-    }
-    
-    /**
-     * Запрос 1: Список объектов указанных типов
-     */
-    public function report1(): void
-    {
-        $types = $this->repository->getAllObjectTypes();
-        $selectedTypes = $_GET['types'] ?? [];
-        $sortOrder = $_GET['sort'] ?? 'alphabet_desc';
-        
-        // Преобразуем выбранные типы в массив, если передан один тип
-        if (!is_array($selectedTypes) && !empty($selectedTypes)) {
-            $selectedTypes = [$selectedTypes];
-        }
-        
-        $results = $this->repository->report1($selectedTypes, $sortOrder);
-        $html = renderLayout('report1', [
-            'types' => $types,
-            'selectedTypes' => $selectedTypes,
-            'sortOrder' => $sortOrder,
-            'results' => $results
-        ]);
-        echo $html;
-    }
-    
-    /**
-     * Запрос 2: Список арендаторов с количеством аренд
-     */
-    public function report2(): void
-    {
-        $results = $this->repository->report2();
-        $html = renderLayout('report2', ['results' => $results]);
-        echo $html;
-    }
-    
-    /**
-     * Запрос 3: Список объектов, которые не сдавались
-     */
-    public function report3(): void
-    {
-        $results = $this->repository->report3();
-        $html = renderLayout('report3', ['results' => $results]);
-        echo $html;
-    }
-    
-    /**
-     * Запрос 4: Список объектов, которые сдавались более 3 раз
-     */
-    public function report4(): void
-    {
-        $results = $this->repository->report4();
-        $html = renderLayout('report4', ['results' => $results]);
-        echo $html;
-    }
-    
-    /**
-     * Запрос 5: Список объектов, которые сдавались больше 2 раз на срок более 1 года
-     */
-    public function report5(): void
-    {
-        $results = $this->repository->report5();
-        $html = renderLayout('report5', ['results' => $results]);
-        echo $html;
-    }
-    
-    /**
-     * Запрос 6: Список объектов с количеством сдач и общей суммой
-     */
-    public function report6(): void
-    {
-        $results = $this->repository->report6();
-        $html = renderLayout('report6', ['results' => $results]);
-        echo $html;
-    }
-    
-    /**
-     * Запрос 7: Список арендаторов со средним сроком аренды
-     */
-    public function report7(): void
-    {
-        $results = $this->repository->report7();
-        $html = renderLayout('report7', ['results' => $results]);
-        echo $html;
-    }
-    
-    /**
-     * Форма для запроса 8
-     */
-    public function report8Form(): void
-    {
-        $types = $this->repository->getAllObjectTypes();
-        $currentYear = date('Y');
-        $html = renderLayout('report8_form', [
-            'types' => $types,
-            'currentYear' => $currentYear
-        ]);
-        echo $html;
-    }
-    
-    /**
-     * Запрос 8: Список объектов, сданных в заданном квартале
-     */
-    public function report8(int $year, int $quarter, array $types): void
-    {
-        // Очищаем от пустых значений
-        $types = array_filter($types, fn($type) => !empty($type));
-        
-        $results = $this->repository->report8($year, $quarter, $types);
-        $html = renderLayout('report8_result', [
-            'year' => $year,
-            'quarter' => $quarter,
-            'selectedTypes' => $types,
-            'results' => $results
-        ]);
-        echo $html;
-    }
-    
-    /**
-     * Запрос 9: Список арендаторов с количеством различных арендуемых объектов
-     */
-    public function report9(): void
-    {
-        $results = $this->repository->report9();
-        $html = renderLayout('report9', ['results' => $results]);
-        echo $html;
-    }
-    
-    /**
-     * Форма для запроса 10
-     */
-    public function report10Form(): void
-    {
-        $types = $this->repository->getAllObjectTypes();
-        $html = renderLayout('report10_form', ['types' => $types]);
-        echo $html;
-    }
-    
-    /**
-     * Запрос 10: Изменение цены аренды у объектов заданного типа
-     */
-    public function report10(string $type): void
-    {
-        $updatedCount = $this->repository->report10($type);
-        $html = renderLayout('report10_result', [
-            'type' => $type,
-            'updatedCount' => $updatedCount
-        ]);
-        echo $html;
+        header('Location: /profile');
+        exit;
     }
 }
 ?>
